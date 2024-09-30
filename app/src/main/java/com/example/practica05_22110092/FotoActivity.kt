@@ -1,24 +1,20 @@
 package com.example.practica05_22110092
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
-import android.view.MenuItem
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -33,10 +29,6 @@ class FotoActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_foto)
-
-        val toolbar: Toolbar = findViewById(R.id.toolbar)
-        setSupportActionBar(toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         foto = findViewById(R.id.foto)
         btnTomar = findViewById(R.id.btnTomar)
@@ -60,12 +52,10 @@ class FotoActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("SuspiciousIndentation")
     private val responseLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { activityResult ->
         if (activityResult.resultCode == RESULT_OK) {
-            Toast.makeText(this, "Foto tomada", Toast.LENGTH_SHORT).show()
-            val extras = activityResult.data!!.extras
-            imageBitmap = extras!!["data"] as Bitmap?
+            val extras = activityResult.data?.extras
+            imageBitmap = extras?.get("data") as Bitmap?
             foto.setImageBitmap(imageBitmap)
         } else {
             Toast.makeText(this, "Foto no tomada", Toast.LENGTH_SHORT).show()
@@ -73,62 +63,53 @@ class FotoActivity : AppCompatActivity() {
     }
 
     private fun guardarFoto(bitmap: Bitmap) {
-        if (isExternalStorageWritable()) {
-            val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val storageDir: File = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
-            val imageFile = File(storageDir, "JPEG_${timeStamp}_.jpg")
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "JPEG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg")
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DCIM)
+        }
 
+        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        if (uri != null) {
             try {
-                val fos = FileOutputStream(imageFile)
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos)
-                fos.close()
-                Toast.makeText(this, "Foto guardada en: ${imageFile.absolutePath}", Toast.LENGTH_LONG).show()
+                contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+                }
+                Toast.makeText(this, "Foto guardada exitosamente", Toast.LENGTH_LONG).show()
             } catch (e: IOException) {
                 e.printStackTrace()
                 Toast.makeText(this, "Error al guardar la foto", Toast.LENGTH_SHORT).show()
             }
         } else {
-            Toast.makeText(this, "El almacenamiento externo no está disponible", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No se pudo crear el archivo de imagen", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun isExternalStorageWritable(): Boolean {
-        return Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED
-    }
-
     private fun checkPermissions(): Boolean {
-        val cameraPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-        val writeExternalStoragePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        return cameraPermission == PackageManager.PERMISSION_GRANTED && writeExternalStoragePermission == PackageManager.PERMISSION_GRANTED
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun requestPermissions() {
-        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE), PERMISSION_REQUEST_CODE)
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.CAMERA),
+            PERMISSION_REQUEST_CODE
+        )
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED && grantResults[1] == PackageManager.PERMISSION_GRANTED) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                 val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                 responseLauncher.launch(intent)
             } else {
                 Toast.makeText(this, "Permisos denegados", Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                Toast.makeText(this, "Regreso", Toast.LENGTH_SHORT).show()
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                }
-                startActivity(intent)
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
         }
     }
 
